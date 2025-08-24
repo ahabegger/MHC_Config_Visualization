@@ -6,8 +6,11 @@ import plotly.graph_objects as go
 import math
 
 
-def create_network_graph(snapshot_name):
-    """Create a network graph from the JSON configuration files, grouped by program."""
+def create_network_graph(snapshot_name, include_classes=None, include_programs=None):
+    """Create a network graph from the JSON configuration files, grouped by program.
+    include_classes: optional list of class/type names to include. If None, include all.
+    include_programs: optional list of program names to include. If None, include all.
+    """
     snapshot_folder = os.path.join("Snapshots", snapshot_name)
 
     # Debug: Check if snapshot folder exists
@@ -32,6 +35,32 @@ def create_network_graph(snapshot_name):
 
     nodes = create_secondary_nodes(nodes)
     print(f"Total nodes after secondary creation: {len(nodes)}")
+
+    # Filter by include_classes if provided
+    if include_classes is not None:
+        class_set = set(include_classes)
+        nodes = [n for n in nodes if n.get('class') in class_set]
+        print(f"Nodes after class filter ({len(class_set)} selected): {len(nodes)}")
+
+    # Filter by include_programs if provided
+    if include_programs is not None:
+        prog_set = set(include_programs)
+        nodes = [n for n in nodes if n.get('program') in prog_set]
+        print(f"Nodes after program filter ({len(prog_set)} selected): {len(nodes)}")
+
+    # Early return with empty figure if no nodes to render
+    if not nodes:
+        return go.Figure(data=[], layout=go.Layout(
+            title=f'Configuration Network for {snapshot_name} (No elements to display)',
+            showlegend=False,
+            hovermode='closest',
+            margin=dict(b=20, l=5, r=5, t=40),
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+            plot_bgcolor='rgba(240,240,240,0.8)',
+            autosize=True,
+            height=800
+        ))
 
     # Create a NetworkX graph
     G = nx.DiGraph()
@@ -73,7 +102,7 @@ def create_network_graph(snapshot_name):
     num_programs = len(programs)
 
     # Calculate cluster centers in a grid layout
-    grid_size = math.ceil(math.sqrt(num_programs))
+    grid_size = math.ceil(math.sqrt(num_programs)) if num_programs else 1
     cluster_spacing = 8  # Distance between cluster centers
 
     # Store cluster centers for labels
@@ -149,7 +178,7 @@ def create_network_graph(snapshot_name):
             program_y = [pos[node][1] for node in program_nodes[program] if node in pos]
 
             if program_x and program_y:
-                # Position label at top of cluster
+                # Position label at top/bottom of cluster alternately
                 label_x = center_x
                 if even:
                     label_y = max(program_y) + 1  # Position above the cluster
@@ -186,15 +215,23 @@ def create_network_graph(snapshot_name):
             # Create hover text
             node_info = G.nodes[node]
 
-            context_hover_text = (f"<b>Name:</b> {node_info['display_name']}<br>"
+            if node_info['order'] == "secondary":
+                node_display = " **"
+            else:
+                node_display = ""
+
+            context_hover_text = (f"<b>Name:</b> {node_info['display_name']}{node_display}<br>"
                           f"<b>Type:</b> {node_info['type']}<br>"
                           f"<b>Program:</b> {node_info['program']}<br>")
 
-            refers_to_hover_text = f"<b>Refers To ({len(list(G.successors(node)))}):</b><br>"
-            for successor in list(G.successors(node)):
-                refers_to_hover_text += f"  {successor}<br>"
-            if node_info['query'] == "True":
-                refers_to_hover_text += "  <b>Query<br>"
+            if node_info['order'] == "secondary":
+                refers_to_hover_text = ""
+            else:
+                refers_to_hover_text = f"<b>Refers To ({len(list(G.successors(node)))}):</b><br>"
+                for successor in list(G.successors(node)):
+                    refers_to_hover_text += f"  {successor}<br>"
+                if node_info['query'] == "True":
+                    refers_to_hover_text += "  <b>Query<br>"
 
             referred_by_hover_text = f"<b>Referred By* ({len(list(G.predecessors(node)))}):</b><br>"
             for predecessor in list(G.predecessors(node)):
@@ -218,6 +255,7 @@ def create_network_graph(snapshot_name):
                             mode='markers',
                             hoverinfo='text',
                             text=node_text,
+                            customdata=[node for node in G.nodes() if node in pos],
                             marker=dict(size=node_size,
                                         color=node_color,
                                         line=dict(width=2, color='white')))
@@ -245,3 +283,4 @@ if __name__ == "__main__":
     snapshot_name = "NDP2"  # Replace with your snapshot name
     graph = create_network_graph(snapshot_name)
     print(graph)  # This will print the graph object, you can visualize it using Plotly or NetworkX
+

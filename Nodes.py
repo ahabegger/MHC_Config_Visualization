@@ -33,11 +33,16 @@ def find_nodes(files, folder):
 
                 item_string = str(item)
                 node['content'] = get_content(item, node_type, item_string)
-                node['connections'] = get_references(item_string)
+                # Build connections and filter out self-references
+                refs = get_references(item_string)
+                node['connections'] = [r for r in refs if r != node_name]
                 node['order'] = "primary"
                 node['query'] = "False"
                 if "qry" in item_string:
                     node['query'] = "True"
+
+                # Attach the raw JSON for collapsible Raw JSON view
+                node['raw'] = item
 
                 my_array = []
 
