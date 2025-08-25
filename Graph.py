@@ -155,6 +155,9 @@ def create_network_graph(snapshot_name, include_classes=None, include_programs=N
         'ClientProgram': '#17becf',
         'MessageCategory': '#9467bd',
         'Incentive': '#8c564b',
+        'ClientRaffle': '#e377c2',
+        'ClientReward': '#7f7f7f',
+        'ClientTaskHandlerDefinition': '#ff9896',
         'Rule': '#e377c2',
         'RuleSet': '#7f7f7f',
         'default': '#17becf'

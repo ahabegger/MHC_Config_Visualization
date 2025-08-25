@@ -46,6 +46,9 @@ def main():
         'ClientProgram': '#17becf',
         'MessageCategory': '#9467bd',
         'Incentive': '#8c564b',
+        'ClientRaffle': '#e377c2',
+        'ClientReward': '#7f7f7f',
+        'ClientTaskHandlerDefinition': '#ff9896',
         'Rule': '#e377c2',
         'RuleSet': '#7f7f7f',
         'default': '#17becf'
@@ -71,7 +74,8 @@ def main():
 
     class_names = [
         "MessageConfig","ClientTopic","StandaloneFormula","ClientPageLayout",
-        "CustomFieldDef","ClientProgram","MessageCategory","Incentive","Rule","RuleSet"
+        "CustomFieldDef","ClientProgram","MessageCategory","Incentive","Rule","RuleSet", "ClientRaffle",
+        "ClientReward","ClientTaskHandlerDefinition"
     ]
     class_options = [
         {"label": html.Span(name, style={"color": class_colors.get(name, class_colors['default'])}), "value": name}
