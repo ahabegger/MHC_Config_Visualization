@@ -30,7 +30,11 @@ def main():
 
     # Create the Dash application
     server = Flask(__name__)
-    app = dash.Dash(__name__, server=server)
+    app = dash.Dash(
+        __name__,
+        server=server,
+        assets_folder=os.path.join(os.path.dirname(__file__), 'Styling', 'assets')
+    )
 
     # Colors matching Graph.py
     class_colors = {
