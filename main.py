@@ -117,7 +117,7 @@ def main():
 
             # Collapsible filter section - classes
             html.Details([
-                html.Summary("Filter By Element"),
+                html.Summary("Filter By Element", className="filter-summary"),
                 dcc.Checklist(
                     id="class-filter",
                     options=class_options,
@@ -125,11 +125,11 @@ def main():
                     labelStyle={"display": "inline-block", "marginRight": "12px", "marginBottom": "6px"},
                     inputStyle={"marginRight": "6px"}
                 )
-            ], open=False, style={"margin": "10px 0"}),
+            ], open=False, className="filter-section", style={"margin": "10px 0"}),
 
             # Collapsible filter section - programs
             html.Details([
-                html.Summary("Filter By Program"),
+                html.Summary("Filter By Program", className="filter-summary"),
                 dcc.Checklist(
                     id="program-filter",
                     options=[],  # populated dynamically based on selected snapshot
@@ -137,7 +137,24 @@ def main():
                     labelStyle={"display": "inline-block", "marginRight": "12px", "marginBottom": "6px"},
                     inputStyle={"marginRight": "6px"}
                 )
-            ], open=False, style={"margin": "10px 0"}),
+            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+
+            # Collapsible filter section - search by node name
+            html.Details([
+                html.Summary("Filter By Search", className="filter-summary"),
+                html.Div([
+                    html.Span("🔎", className="search-icon"),
+                    dcc.Input(
+                        id="search-filter",
+                        type="text",
+                        placeholder="Type to include nodes whose name contains...",
+                        value="",
+                        debounce=True,
+                        className="search-input"
+                    ),
+                    html.Button("Reset", id="reset-search-button", title="Clear search", className="search-reset-btn")
+                ], className="search-input-wrapper")
+            ], open=False, className="filter-section", style={"margin": "10px 0"}),
 
             dcc.Graph(id="network-graph", style={"height": "800px"}),
             # Add this div to display clicked node information
@@ -220,13 +237,13 @@ def main():
     # Update the graph based on filters
     @app.callback(
         Output("network-graph", "figure"),
-        [Input("snapshot-dropdown", "value"), Input("class-filter", "value"), Input("program-filter", "value")]
+        [Input("snapshot-dropdown", "value"), Input("class-filter", "value"), Input("program-filter", "value"), Input("search-filter", "value")]
     )
-    def update_graph(selected_snapshot, included_classes, included_programs):
+    def update_graph(selected_snapshot, included_classes, included_programs, search_text):
         if not selected_snapshot:
             return {}
         try:
-            return Graph.create_network_graph(selected_snapshot, include_classes=included_classes, include_programs=included_programs)
+            return Graph.create_network_graph(selected_snapshot, include_classes=included_classes, include_programs=included_programs, name_contains=(search_text or None))
         except Exception as e:
             print(f"Error creating graph: {e}")
             return {}
@@ -239,6 +256,15 @@ def main():
         snapshots = [d for d in os.listdir("Snapshots") if os.path.isdir(os.path.join("Snapshots", d))]
         return [{"label": s, "value": s} for s in snapshots]
 
+    # Reset search filter
+    @app.callback(
+        Output("search-filter", "value"),
+        Input("reset-search-button", "n_clicks")
+    )
+    def reset_search(n_clicks):
+        if n_clicks:
+            return ""
+        return dash.no_update
 
     # Unified download handler that also updates the status box
     @app.callback(

@@ -6,10 +6,12 @@ import plotly.graph_objects as go
 import math
 
 
-def create_network_graph(snapshot_name, include_classes=None, include_programs=None):
+def create_network_graph(snapshot_name, include_classes=None, include_programs=None, name_contains=None):
     """Create a network graph from the JSON configuration files, grouped by program.
     include_classes: optional list of class/type names to include. If None, include all.
     include_programs: optional list of program names to include. If None, include all.
+    name_contains: optional substring filter (case-insensitive) on node name. If provided, only nodes whose
+                   internal name contains this text will be included.
     """
     snapshot_folder = os.path.join("Snapshots", snapshot_name)
 
@@ -42,11 +44,17 @@ def create_network_graph(snapshot_name, include_classes=None, include_programs=N
         nodes = [n for n in nodes if n.get('class') in class_set]
         print(f"Nodes after class filter ({len(class_set)} selected): {len(nodes)}")
 
-    # Filter by include_programs if provided
-    if include_programs is not None:
+    # Filter by include_programs if provided and not empty
+    if include_programs is not None and len(include_programs) > 0:
         prog_set = set(include_programs)
         nodes = [n for n in nodes if n.get('program') in prog_set]
         print(f"Nodes after program filter ({len(prog_set)} selected): {len(nodes)}")
+
+    # Filter by name_contains if provided (case-insensitive substring on node 'name')
+    if name_contains:
+        term = name_contains.lower()
+        nodes = [n for n in nodes if isinstance(n.get('name'), str) and term in n.get('name').lower()]
+        print(f"Nodes after name filter ('{name_contains}') : {len(nodes)}")
 
     # Early return with empty figure if no nodes to render
     if not nodes:
