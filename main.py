@@ -25,6 +25,13 @@ def main():
     if not os.path.exists("Content"):
         os.makedirs("Content")
 
+    # Print absolute locations to help users place files
+    snapshots_abs = os.path.abspath("Snapshots")
+    content_abs = os.path.abspath("Content")
+    print(f"Snapshots folder: {snapshots_abs}")
+    print(f"Content folder:   {content_abs}")
+    print("To add a new snapshot, create a subfolder under the Snapshots folder and put your .json files inside it.")
+
     # Get list of existing snapshots
     snapshots = [d for d in os.listdir("Snapshots") if os.path.isdir(os.path.join("Snapshots", d))]
 
@@ -33,73 +40,36 @@ def main():
     app = dash.Dash(
         __name__,
         server=server,
-        assets_folder=os.path.join(os.path.dirname(__file__), 'Styling', 'assets')
+        assets_folder=os.path.join(os.path.dirname(__file__), 'Styling', 'CSS')
     )
-
-    # Colors matching Graph.py
-    class_colors = {
-        'MessageConfig': '#1f77b4',
-        'ClientTopic': '#ff7f0e',
-        'StandaloneFormula': '#2ca02c',
-        'ClientPageLayout': '#d62728',
-        'CustomFieldDef': '#bcbd22',
-        'ClientProgram': '#17becf',
-        'MessageCategory': '#9467bd',
-        'Incentive': '#8c564b',
-        'ClientRaffle': '#e377c2',
-        'ClientReward': '#7f7f7f',
-        'ClientTaskHandlerDefinition': '#ff9896',
-        'Rule': '#e377c2',
-        'RuleSet': '#7f7f7f',
-        'default': '#17becf'
-    }
-
-    # Shared button styles to make the button section nicer
-    base_button_style = {
-        "padding": "10px 14px",
-        "margin": "6px",
-        "border": "none",
-        "borderRadius": "6px",
-        "color": "#fff",
-        "fontWeight": "600",
-        "cursor": "pointer",
-        "boxShadow": "0 1px 2px rgba(0,0,0,0.12)"
-    }
-    button_styles = {
-        "incentive": {"backgroundColor": class_colors['Incentive']},
-        "message": {"backgroundColor": class_colors['MessageConfig']},
-        "custom": {"backgroundColor": class_colors['CustomFieldDef']},
-        "layout": {"backgroundColor": class_colors['ClientPageLayout']}
-    }
 
     class_names = [
         "MessageConfig","ClientTopic","StandaloneFormula","ClientPageLayout",
         "CustomFieldDef","ClientProgram","MessageCategory","Incentive","Rule","RuleSet", "ClientRaffle",
         "ClientReward","ClientTaskHandlerDefinition"
     ]
+
     class_options = [
-        {"label": html.Span(name, style={"color": class_colors.get(name, class_colors['default'])}), "value": name}
+        {"label": html.Span(name, className=f"label-{name}"), "value": name}
         for name in class_names
     ]
 
     app.layout = html.Div([
         html.Div([
-            html.H1("MHC Configuration Visualization Tool", style={
-                "textAlign": "center",
-                "color": "#2c3e50",
-                "fontSize": "34px",
-                "margin": "0 0 6px"
-            }),
-            html.P("By Alex Habegger - GitHub: @ahabegger",
-                   style={"textAlign": "center", "fontSize": "14px", "color": "#6b7280", "margin": 0})
-        ], style={
-            "padding": "16px 20px",
-            "background": "linear-gradient(90deg, #f7f9fc, #eef2f7)",
-            "border": "1px solid #e5e9f2",
-            "borderRadius": "8px",
-            "marginBottom": "16px",
-            "boxShadow": "0 1px 2px rgba(0,0,0,0.06)"
-        }),
+            html.H1("MHC Configuration Visualization Tool"),
+            html.P("By Alex Habegger - GitHub: @ahabegger")
+        ], className="header-card"),
+
+        html.Details([
+            html.Summary("How to Add Snapshots", className="filter-summary"),
+            html.Div([
+                html.P("Where to add new snapshots:", className="helper-text"),
+                html.P("Place JSON files under this folder (one subfolder per snapshot):"),
+                html.P(["Snapshots folder: ", html.Code(snapshots_abs)]),
+                html.P("After adding a folder, click 'Refresh Snapshot List' to see it in the dropdown."),
+                html.P(["Content folder (CSV exports): ", html.Code(content_abs)])
+            ], className="status-box")
+        ], open=False, className="filter-section"),
 
         html.Div([
             html.Div([
@@ -108,20 +78,11 @@ def main():
                     options=[{"label": s, "value": s} for s in snapshots],
                     placeholder="Select a snapshot to view",
                     value=snapshots[0] if snapshots else None,
-                    style={"minWidth": "320px", "flex": "1 1 320px"}
+                    className="snapshot-dropdown"
                 ),
-                html.Button("Refresh Snapshot List", id="refresh-button",
-                            style={**base_button_style, "backgroundColor": "#6c757d"}),
-                html.Button("Refresh Graph", id="refresh-graph-button",
-                            style={**base_button_style, "backgroundColor": class_colors['MessageConfig']})
-            ], style={
-                "display": "flex",
-                "flexWrap": "wrap",
-                "gap": "10px",
-                "alignItems": "center",
-                "justifyContent": "center",
-                "marginBottom": "10px"
-            }),
+                html.Button("Refresh Snapshot List", id="refresh-button", className="btn btn-secondary"),
+                html.Button("Refresh Graph", id="refresh-graph-button", className="btn btn-message")
+            ], className="controls-row"),
 
             # Collapsible filter section - classes
             html.Details([
@@ -130,10 +91,9 @@ def main():
                     id="class-filter",
                     options=class_options,
                     value=class_names,
-                    labelStyle={"display": "inline-block", "marginRight": "12px", "marginBottom": "6px"},
-                    inputStyle={"marginRight": "6px"}
+                    className="checklist"
                 )
-            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+            ], open=False, className="filter-section"),
 
             # Collapsible filter section - programs
             html.Details([
@@ -142,10 +102,9 @@ def main():
                     id="program-filter",
                     options=[],  # populated dynamically based on selected snapshot
                     value=[],    # default to all programs in snapshot via callback
-                    labelStyle={"display": "inline-block", "marginRight": "12px", "marginBottom": "6px"},
-                    inputStyle={"marginRight": "6px"}
+                    className="checklist"
                 )
-            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+            ], open=False, className="filter-section"),
 
             # Collapsible filter section - search by node name
             html.Details([
@@ -162,7 +121,7 @@ def main():
                     ),
                     html.Button("Reset", id="reset-search-button", title="Clear search", className="search-reset-btn")
                 ], className="search-input-wrapper")
-            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+            ], open=False, className="filter-section"),
 
             # New: Highlight section - search within raw JSON
             html.Details([
@@ -180,13 +139,12 @@ def main():
                     html.Button("Reset", id="reset-json-highlight", title="Clear JSON highlight", className="search-reset-btn")
                 ], className="search-input-wrapper"),
                 html.Div([
-                    html.P("Enter a Regular Expression (case-insensitive) to test against each node's raw JSON.", style={"margin": "6px 0 4px", "color": "#555"}),
-                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.",
-                          style={"margin": "6px 0 4px", "color": "#555"}),
-                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no JSON).", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"}),
-                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"})
+                    html.P("Enter a Regular Expression (case-insensitive) to test against each node's raw JSON.", className="helper-text"),
+                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.", className="helper-text"),
+                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no JSON).", className="helper-note"),
+                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", className="helper-note")
                 ])
-            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+            ], open=False, className="filter-section"),
 
             # New: Highlight section - search within extracted content
             html.Details([
@@ -204,70 +162,41 @@ def main():
                     html.Button("Reset", id="reset-content-highlight", title="Clear Content highlight", className="search-reset-btn")
                 ], className="search-input-wrapper"),
                 html.Div([
-                    html.P("Enter a Regular Expression (case-insensitive) to test against extracted node content (e.g., message bodies, field defaults, HTML blocks).", style={"margin": "6px 0 4px", "color": "#555"}),
-                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.",
-                        style={"margin": "6px 0 4px", "color": "#555"}),
-                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no or empty content).", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"}),
-                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"})
+                    html.P("Enter a Regular Expression (case-insensitive) to test against extracted node content (e.g., message bodies, field defaults, HTML blocks).", className="helper-text"),
+                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.", className="helper-text"),
+                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no or empty content).", className="helper-note"),
+                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", className="helper-note")
                 ])
-            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+            ], open=False, className="filter-section"),
 
-            dcc.Graph(id="network-graph", style={"height": "800px"}),
+            dcc.Graph(id="network-graph", className="network-graph"),
             # Add this div to display clicked node information
-            html.Div(id="node-info", style={
-                "margin": "20px 0",
-                "padding": "15px",
-                "border": "1px solid #ddd",
-                "borderRadius": "5px",
-                "backgroundColor": "#f9f9f9"
-            })
-        ], style={"border": "1px solid #ddd", "padding": "20px"}),
+            html.Div(id="node-info", className="node-info-box")
+        ], className="panel-box"),
 
         html.H3("* = Elements could be referrenced by non-uploaded elements or by queries"),
         html.H3("** = Implied elements created to represent references to non-uploaded elements (missing context)"),
         html.Div([
             html.Button("Download Incentive Content", id="download-incentive-button",
-                        title="Export Incentive content to CSV",
-                        style={**base_button_style, **button_styles["incentive"]}),
+                        title="Export Incentive content to CSV", className="btn btn-incentive"),
             html.Button("Download Message Content", id="download-message-button",
-                        title="Export Message content to CSV",
-                        style={**base_button_style, **button_styles["message"]}),
+                        title="Export Message content to CSV", className="btn btn-message"),
             html.Button("Download Custom Fields Content", id="download-custom-fields-button",
-                        title="Export Custom Field definitions to CSV",
-                        style={**base_button_style, **button_styles["custom"]}),
+                        title="Export Custom Field definitions to CSV", className="btn btn-custom"),
             html.Button("Download Page Layout Content***", id="download-page-layout-button",
-                        title="Export Page Layout HTML content to CSV",
-                        style={**base_button_style, **button_styles["layout"]})
-        ], style={
-            "display": "flex",
-            "flexWrap": "wrap",
-            "gap": "10px",
-            "justifyContent": "center",
-            "alignItems": "center",
-            "marginTop": "20px"
-        }),
+                        title="Export Page Layout HTML content to CSV", className="btn btn-layout")
+        ], className="buttons-row"),
 
         # Download status box (below the buttons)
         dcc.Loading(
             id="download-loading",
             type="default",
             color="#999",
-            children=html.Div(id="download-status", style={
-                "margin": "10px auto 0",
-                "maxWidth": "900px",
-                "padding": "10px 12px",
-                "border": "1px solid #ddd",
-                "borderRadius": "5px",
-                "backgroundColor": "#f9f9f9",
-                "textAlign": "center",
-                "minHeight": "24px",
-                "color": "#333"
-            })
+            children=html.Div(id="download-status", className="status-box")
         ),
 
-        html.Div("*** = Only downloads HTML Elements from page layouts",
-                 style={"textAlign": "center", "fontSize": "12px", "color": "#555", "marginTop": "5px"})
-    ], style={"max-width": "1200px", "margin": "0 auto", "padding": "20px"})
+        html.Div("*** = Only downloads HTML Elements from page layouts", className="footnote")
+    ], className="app-container")
 
 
     # Populate program filter options and defaults when snapshot changes
@@ -409,7 +338,7 @@ def main():
     )
     def display_clicked_node_info(clickData, node_link_clicks, selected_snapshot):
         if not selected_snapshot:
-            return html.Div("Click a node to see details", style={"color": "#666"})
+            return html.Div("Click a node to see details", className="muted-text")
 
         # Determine what triggered the callback
         ctx = dash.callback_context
@@ -442,7 +371,7 @@ def main():
                     if node_details:
                         return node_clicked(node_details, nodes)
 
-            return html.Div("Click a node to see details", style={"color": "#666"})
+            return html.Div("Click a node to see details", className="muted-text")
 
         except Exception as e:
             return html.Div(f"Error loading node details: {str(e)}")
@@ -451,9 +380,7 @@ def main():
     return app
 
 
-
-
-
 if __name__ == "__main__":
     app = main()
     app.run(debug=True)
+
