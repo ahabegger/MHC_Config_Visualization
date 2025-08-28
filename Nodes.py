@@ -38,6 +38,7 @@ def find_nodes(files, folder):
                 node['connections'] = [r for r in refs if r != node_name]
                 node['order'] = "primary"
                 node['query'] = "False"
+                node['json'] = item_string
                 if "qry" in item_string:
                     node['query'] = "True"
 
@@ -117,7 +118,7 @@ def get_references(string):
     """Extract references from the item string."""
     references = []
 
-    for match in re.finditer(r'<<(?:[^>]+)>>', string):
+    for match in re.finditer(r'<<[^>]+>>', string):
         reference = match.group(0).strip()
         if reference and str(reference) not in references:
             if classify_item_type(str(reference)) is not None:
@@ -153,7 +154,8 @@ def create_secondary_nodes(nodes):
                         'content': None,
                         'connections': [],
                         'order': "secondary",
-                        'query': "False"
+                        'query': "False",
+                        'json': None
                     }
                 else:
                     new_node = {
@@ -164,7 +166,8 @@ def create_secondary_nodes(nodes):
                         'content': None,
                         'connections': [],
                         'order': "secondary",
-                        'query': "False"
+                        'query': "False",
+                        'json': None
                     }
 
                 if new_node['class'] is not None:

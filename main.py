@@ -164,6 +164,54 @@ def main():
                 ], className="search-input-wrapper")
             ], open=False, className="filter-section", style={"margin": "10px 0"}),
 
+            # New: Highlight section - search within raw JSON
+            html.Details([
+                html.Summary("Highlight By Search In JSON", className="filter-summary"),
+                html.Div([
+                    html.Span("🧩", className="search-icon"),
+                    dcc.Input(
+                        id="json-highlight",
+                        type="text",
+                        placeholder="Highlight nodes whose raw JSON contains...",
+                        value="",
+                        debounce=True,
+                        className="search-input"
+                    ),
+                    html.Button("Reset", id="reset-json-highlight", title="Clear JSON highlight", className="search-reset-btn")
+                ], className="search-input-wrapper"),
+                html.Div([
+                    html.P("Enter a Regular Expression (case-insensitive) to test against each node's raw JSON.", style={"margin": "6px 0 4px", "color": "#555"}),
+                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.",
+                          style={"margin": "6px 0 4px", "color": "#555"}),
+                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no JSON).", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"}),
+                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"})
+                ])
+            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+
+            # New: Highlight section - search within extracted content
+            html.Details([
+                html.Summary("Highlight By Search in Content", className="filter-summary"),
+                html.Div([
+                    html.Span("✨", className="search-icon"),
+                    dcc.Input(
+                        id="content-highlight",
+                        type="text",
+                        placeholder="Highlight nodes whose extracted content contains...",
+                        value="",
+                        debounce=True,
+                        className="search-input"
+                    ),
+                    html.Button("Reset", id="reset-content-highlight", title="Clear Content highlight", className="search-reset-btn")
+                ], className="search-input-wrapper"),
+                html.Div([
+                    html.P("Enter a Regular Expression (case-insensitive) to test against extracted node content (e.g., message bodies, field defaults, HTML blocks).", style={"margin": "6px 0 4px", "color": "#555"}),
+                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.",
+                        style={"margin": "6px 0 4px", "color": "#555"}),
+                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no or empty content).", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"}),
+                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", style={"margin": 0, "color": "#6b7280", "fontSize": "12px"})
+                ])
+            ], open=False, className="filter-section", style={"margin": "10px 0"}),
+
             dcc.Graph(id="network-graph", style={"height": "800px"}),
             # Add this div to display clicked node information
             html.Div(id="node-info", style={
@@ -245,13 +293,20 @@ def main():
     # Update the graph based on filters
     @app.callback(
         Output("network-graph", "figure"),
-        [Input("snapshot-dropdown", "value"), Input("class-filter", "value"), Input("program-filter", "value"), Input("search-filter", "value")]
+        [Input("snapshot-dropdown", "value"), Input("class-filter", "value"), Input("program-filter", "value"), Input("search-filter", "value"), Input("json-highlight", "value"), Input("content-highlight", "value")]
     )
-    def update_graph(selected_snapshot, included_classes, included_programs, search_text):
+    def update_graph(selected_snapshot, included_classes, included_programs, search_text, json_highlight, content_highlight):
         if not selected_snapshot:
             return {}
         try:
-            return Graph.create_network_graph(selected_snapshot, include_classes=included_classes, include_programs=included_programs, name_contains=(search_text or None))
+            return Graph.create_network_graph(
+                selected_snapshot,
+                include_classes=included_classes,
+                include_programs=included_programs,
+                name_contains=(search_text or None),
+                highlight_json_contains=(json_highlight or None),
+                highlight_content_contains=(content_highlight or None)
+            )
         except Exception as e:
             print(f"Error creating graph: {e}")
             return {}
@@ -270,6 +325,26 @@ def main():
         Input("reset-search-button", "n_clicks")
     )
     def reset_search(n_clicks):
+        if n_clicks:
+            return ""
+        return dash.no_update
+
+    # Reset JSON highlight
+    @app.callback(
+        Output("json-highlight", "value"),
+        Input("reset-json-highlight", "n_clicks")
+    )
+    def reset_json_highlight(n_clicks):
+        if n_clicks:
+            return ""
+        return dash.no_update
+
+    # Reset Content highlight
+    @app.callback(
+        Output("content-highlight", "value"),
+        Input("reset-content-highlight", "n_clicks")
+    )
+    def reset_content_highlight(n_clicks):
         if n_clicks:
             return ""
         return dash.no_update
@@ -382,4 +457,3 @@ def main():
 if __name__ == "__main__":
     app = main()
     app.run(debug=True)
-

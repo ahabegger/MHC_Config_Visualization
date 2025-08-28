@@ -4,16 +4,21 @@ import networkx as nx
 from Nodes import find_nodes, create_secondary_nodes
 import plotly.graph_objects as go
 import math
+import re
 
 
-def create_network_graph(snapshot_name, include_classes=None, include_programs=None, name_contains=None):
+def create_network_graph(snapshot_folder_name, include_classes=None, include_programs=None, name_contains=None, highlight_json_contains=None, highlight_content_contains=None):
     """Create a network graph from the JSON configuration files, grouped by program.
     include_classes: optional list of class/type names to include. If None, include all.
     include_programs: optional list of program names to include. If None, include all.
     name_contains: optional substring filter (case-insensitive) on node name. If provided, only nodes whose
                    internal name contains this text will be included.
+    highlight_json_contains: optional regex pattern (case-insensitive). If provided, nodes with JSON available
+                             will be highlighted green if they match, red if they don't. Nodes without JSON are black.
+    highlight_content_contains: optional regex pattern (case-insensitive). If provided, nodes with extracted content
+                                will be highlighted green if they match, red if they don't. Nodes without content are black.
     """
-    snapshot_folder = os.path.join("Snapshots", snapshot_name)
+    snapshot_folder = os.path.join("Snapshots", snapshot_folder_name)
 
     # Debug: Check if snapshot folder exists
     if not os.path.exists(snapshot_folder):
@@ -59,7 +64,7 @@ def create_network_graph(snapshot_name, include_classes=None, include_programs=N
     # Early return with empty figure if no nodes to render
     if not nodes:
         return go.Figure(data=[], layout=go.Layout(
-            title=f'Configuration Network for {snapshot_name} (No elements to display)',
+            title=f'Configuration Network for {snapshot_folder_name} (No elements to display)',
             showlegend=False,
             hovermode='closest',
             margin=dict(b=20, l=5, r=5, t=40),
@@ -70,10 +75,23 @@ def create_network_graph(snapshot_name, include_classes=None, include_programs=N
             height=800
         ))
 
+    # Compile regex patterns (case-insensitive); handle invalid patterns gracefully
+    def compile_pattern(pat):
+        if not pat:
+            return None
+        try:
+            return re.compile(pat, re.IGNORECASE)
+        except re.error as e:
+            print(f"Invalid regex pattern '{pat}': {e}")
+            return None
+
+    json_pat = compile_pattern(highlight_json_contains)
+    content_pat = compile_pattern(highlight_content_contains)
+
     # Create a NetworkX graph
     G = nx.DiGraph()
 
-    # Add nodes to the graph
+    # Add nodes to the graph (include content/json for highlighting)
     for node in nodes:
         G.add_node(node['name'],
                    display_name=node['display_name'],
@@ -81,7 +99,9 @@ def create_network_graph(snapshot_name, include_classes=None, include_programs=N
                    query=node['query'],
                    name=node['display_name'],
                    program=node['program'],
-                   order=node['order'])
+                   order=node['order'],
+                   json_str=node.get('json'),
+                   content=node.get('content'))
 
     # Add edges based on connections
     for node in nodes:
@@ -210,18 +230,40 @@ def create_network_graph(snapshot_name, include_classes=None, include_programs=N
                 )
                 label_traces.append(label_trace)
 
-    # Prepare node traces
-    node_x = []
-    node_y = []
-    node_text = []
-    node_color = []
-    node_size = []
+    # Helper to stringify content for content regex
+    def stringify_content(val):
+        if val is None:
+            return None
+        try:
+            if isinstance(val, (list, tuple)):
+                parts = []
+                for v in val:
+                    if v is None:
+                        continue
+                    s = str(v).strip()
+                    if s:
+                        parts.append(s)
+                return "\n".join(parts) if parts else None
+            s = str(val).strip()
+            return s if s else None
+        except Exception:
+            return None
 
+    # Decide node grouping for highlight borders
+    highlight_active = bool(json_pat or content_pat)
+
+    # Buckets for nodes by border outcome
+    groups = {
+        'matched': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []},
+        'not_matched': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []},
+        'na': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []},
+        'default': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []}
+    }
+
+    # Prepare node traces data
     for node in G.nodes():
         if node in pos:
             x, y = pos[node]
-            node_x.append(x)
-            node_y.append(y)
 
             # Create hover text
             node_info = G.nodes[node]
@@ -253,31 +295,105 @@ def create_network_graph(snapshot_name, include_classes=None, include_programs=N
                 warning_hover_text = ""
 
             hover_text = context_hover_text + refers_to_hover_text + referred_by_hover_text + warning_hover_text
-            node_text.append(hover_text)
 
             # Set color based on type
-            node_color.append(class_colors.get(node_info['type'], class_colors['default']))
+            base_color = class_colors.get(node_info['type'], class_colors['default'])
 
             # Set size based on connections
             connection_count = len(list(G.successors(node))) + len(list(G.predecessors(node)))
-            node_size.append(max(8, min(20, 10 + connection_count * 2)))
+            size = max(8, min(20, 10 + connection_count * 2))
 
-    node_trace = go.Scatter(x=node_x, y=node_y,
-                            mode='markers',
-                            hoverinfo='text',
-                            text=node_text,
-                            customdata=[node for node in G.nodes() if node in pos],
-                            marker=dict(size=node_size,
-                                        color=node_color,
-                                        line=dict(width=2, color='white')))
+            # Determine highlight group
+            group_key = 'default'
+            if highlight_active:
+                json_available = node_info.get('json_str') is not None and str(node_info.get('json_str')).strip() != ""
+                content_str = stringify_content(node_info.get('content'))
+                content_available = content_str is not None
+
+                applicable_flags = []
+                match_flags = []
+
+                if json_pat is not None:
+                    applicable_flags.append(json_available)
+                    if json_available:
+                        try:
+                            match_flags.append(bool(json_pat.search(str(node_info.get('json_str')))))
+                        except Exception:
+                            match_flags.append(False)
+                    else:
+                        # not applicable
+                        pass
+
+                if content_pat is not None:
+                    applicable_flags.append(content_available)
+                    if content_available:
+                        try:
+                            match_flags.append(bool(content_pat.search(content_str)))
+                        except Exception:
+                            match_flags.append(False)
+                    else:
+                        pass
+
+                any_applicable = any(applicable_flags) if applicable_flags else False
+                if not any_applicable:
+                    group_key = 'na'
+                else:
+                    # If all applicable patterns matched -> matched
+                    if match_flags and all(match_flags):
+                        group_key = 'matched'
+                    else:
+                        group_key = 'not_matched'
+
+            # Append to the selected group
+            target = groups[group_key]
+            target['x'].append(x)
+            target['y'].append(y)
+            target['text'].append(hover_text)
+            target['customdata'].append(node)
+            target['size'].append(size)
+            target['color'].append(base_color)
+
+    # Build node traces
+    node_traces = []
+    if not highlight_active:
+        # Single default trace with white borders
+        node_traces.append(go.Scatter(
+            x=groups['default']['x'], y=groups['default']['y'],
+            mode='markers', hoverinfo='text', text=groups['default']['text'],
+            customdata=groups['default']['customdata'],
+            marker=dict(size=groups['default']['size'], color=groups['default']['color'], line=dict(width=2, color='white'))
+        ))
+    else:
+        # Matched (green), Not matched (red), Not applicable (black)
+        if groups['matched']['x']:
+            node_traces.append(go.Scatter(
+                x=groups['matched']['x'], y=groups['matched']['y'],
+                mode='markers', hoverinfo='text', text=groups['matched']['text'],
+                customdata=groups['matched']['customdata'],
+                marker=dict(size=groups['matched']['size'], color=groups['matched']['color'], line=dict(width=3, color='#2ecc71'))
+            ))
+        if groups['not_matched']['x']:
+            node_traces.append(go.Scatter(
+                x=groups['not_matched']['x'], y=groups['not_matched']['y'],
+                mode='markers', hoverinfo='text', text=groups['not_matched']['text'],
+                customdata=groups['not_matched']['customdata'],
+                marker=dict(size=groups['not_matched']['size'], color=groups['not_matched']['color'], line=dict(width=3, color='#e74c3c'))
+            ))
+        if groups['na']['x']:
+            node_traces.append(go.Scatter(
+                x=groups['na']['x'], y=groups['na']['y'],
+                mode='markers', hoverinfo='text', text=groups['na']['text'],
+                customdata=groups['na']['customdata'],
+                marker=dict(size=groups['na']['size'], color=groups['na']['color'], line=dict(width=3, color='#000000'))
+            ))
 
     # Combine all traces
-    all_traces = [edge_trace] + label_traces + [node_trace]
+    all_traces = [edge_trace] + label_traces + node_traces
 
     # Create the figure
     fig = go.Figure(data=all_traces,
                     layout=go.Layout(
-                        title=f'Configuration Network for {snapshot_name} (Clustered by Program)',
+                        title=f'Configuration Network for {snapshot_folder_name} (Clustered by Program)',
                         showlegend=False,
                         hovermode='closest',
                         margin=dict(b=20, l=5, r=5, t=40),
@@ -294,4 +410,3 @@ if __name__ == "__main__":
     snapshot_name = "NDP2"  # Replace with your snapshot name
     graph = create_network_graph(snapshot_name)
     print(graph)  # This will print the graph object, you can visualize it using Plotly or NetworkX
-
