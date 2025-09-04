@@ -1,13 +1,12 @@
 import os
 import networkx as nx
-
 from Nodes import find_nodes, create_secondary_nodes
 import plotly.graph_objects as go
 import math
 import re
 
 
-def create_network_graph(snapshot_folder_name, include_classes=None, include_programs=None, name_contains=None, highlight_json_contains=None, highlight_content_contains=None):
+def create_network_graph(snapshot_folder_name, include_classes=None, include_programs=None, name_contains=None, highlight_json_contains=None, highlight_content_contains=None, border_override=None, include_secondary=True):
     """Create a network graph from the JSON configuration files, grouped by program.
     include_classes: optional list of class/type names to include. If None, include all.
     include_programs: optional list of program names to include. If None, include all.
@@ -17,6 +16,8 @@ def create_network_graph(snapshot_folder_name, include_classes=None, include_pro
                              will be highlighted green if they match, red if they don't. Nodes without JSON are black.
     highlight_content_contains: optional regex pattern (case-insensitive). If provided, nodes with extracted content
                                 will be highlighted green if they match, red if they don't. Nodes without content are black.
+    border_override: optional dict mapping node name -> one of {'same','distinct','changed'} to control border colors for compare views.
+    include_secondary: when True (default) include implied secondary nodes; when False, show only primary nodes.
     """
     snapshot_folder = os.path.join("Snapshots", snapshot_folder_name)
 
@@ -40,8 +41,11 @@ def create_network_graph(snapshot_folder_name, include_classes=None, include_pro
 
     print(f"Found {len(nodes)} initial nodes")
 
-    nodes = create_secondary_nodes(nodes)
-    print(f"Total nodes after secondary creation: {len(nodes)}")
+    if include_secondary:
+        nodes = create_secondary_nodes(nodes)
+        print(f"Total nodes after secondary creation: {len(nodes)}")
+    else:
+        print("Skipping secondary node creation for this graph (primary-only)")
 
     # Filter by include_classes if provided
     if include_classes is not None:
@@ -99,7 +103,7 @@ def create_network_graph(snapshot_folder_name, include_classes=None, include_pro
                    query=node['query'],
                    name=node['display_name'],
                    program=node['program'],
-                   order=node['order'],
+                   order=node.get('order', 'primary'),
                    json_str=node.get('json'),
                    content=node.get('content'))
 
@@ -250,9 +254,93 @@ def create_network_graph(snapshot_folder_name, include_classes=None, include_pro
             return None
 
     # Decide node grouping for highlight borders
-    highlight_active = bool(json_pat or content_pat)
+    compare_mode = isinstance(border_override, dict) and len(border_override) > 0
+    highlight_active = bool((json_pat or content_pat) and not compare_mode)
 
-    # Buckets for nodes by border outcome
+    # When compare_mode, create fixed groups by override
+    if compare_mode:
+        compare_groups = {
+            'same': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []},
+            'changed': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []},
+            'distinct': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []}
+        }
+        for node in G.nodes():
+            if node in pos:
+                x, y = pos[node]
+                node_info = G.nodes[node]
+
+                if node_info['order'] == "secondary":
+                    node_display = " **"
+                else:
+                    node_display = ""
+
+                context_hover_text = (f"<b>Name:</b> {node_info['display_name']}{node_display}<br>"
+                              f"<b>Type:</b> {node_info['type']}<br>"
+                              f"<b>Program:</b> {node_info['program']}<br>")
+
+                if node_info['order'] == "secondary":
+                    refers_to_hover_text = ""
+                else:
+                    refers_to_hover_text = f"<b>Refers To ({len(list(G.successors(node)))}):</b><br>"
+                    for successor in list(G.successors(node)):
+                        refers_to_hover_text += f"  {successor}<br>"
+                    if node_info['query'] == "True":
+                        refers_to_hover_text += "  <b>Query<br>"
+
+                referred_by_hover_text = f"<b>Referred By* ({len(list(G.predecessors(node)))}):</b><br>"
+                for predecessor in list(G.predecessors(node)):
+                    referred_by_hover_text += f"  {predecessor}<br>"
+                if node_info['order'] == "secondary":
+                    warning_hover_text = f"<b>Warning:</b> This is an implied element and could be missing context"
+                else:
+                    warning_hover_text = ""
+
+                hover_text = context_hover_text + refers_to_hover_text + referred_by_hover_text + warning_hover_text
+
+                base_color = class_colors.get(node_info['type'], class_colors['default'])
+                connection_count = len(list(G.successors(node))) + len(list(G.predecessors(node)))
+                size = max(8, min(20, 10 + connection_count * 2))
+
+                label = border_override.get(node, 'same')
+                bucket = compare_groups.get(label, compare_groups['same'])
+                bucket['x'].append(x)
+                bucket['y'].append(y)
+                bucket['text'].append(hover_text)
+                bucket['customdata'].append(node)
+                bucket['size'].append(size)
+                bucket['color'].append(base_color)
+
+        # Build traces per compare bucket with distinct border colors
+        node_traces = []
+        mapping = {
+            'same': '#000000',
+            'changed': '#f39c12',
+            'distinct': '#e74c3c'
+        }
+        for key in ['same', 'changed', 'distinct']:
+            grp = compare_groups[key]
+            if grp['x']:
+                node_traces.append(go.Scatter(
+                    x=grp['x'], y=grp['y'], mode='markers', hoverinfo='text', text=grp['text'],
+                    customdata=grp['customdata'],
+                    marker=dict(size=grp['size'], color=grp['color'], line=dict(width=3, color=mapping[key]))
+                ))
+
+        all_traces = [edge_trace] + label_traces + node_traces
+        fig = go.Figure(data=all_traces,
+                        layout=go.Layout(
+                            title=f'Configuration Network for {snapshot_folder_name} (Clustered by Program)',
+                            showlegend=False,
+                            hovermode='closest',
+                            margin=dict(b=20, l=5, r=5, t=40),
+                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            plot_bgcolor='rgba(240,240,240,0.8)',
+                            autosize=True,
+                            height=800))
+        return fig
+
+    # Buckets for nodes by border outcome (highlight mode)
     groups = {
         'matched': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []},
         'not_matched': {'x': [], 'y': [], 'text': [], 'customdata': [], 'size': [], 'color': []},

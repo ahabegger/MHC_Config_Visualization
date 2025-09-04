@@ -40,7 +40,8 @@ def main():
     app = dash.Dash(
         __name__,
         server=server,
-        assets_folder=os.path.join(os.path.dirname(__file__), 'Styling', 'CSS')
+        assets_folder=os.path.join(os.path.dirname(__file__), 'Styling', 'CSS'),
+        suppress_callback_exceptions=True
     )
 
     class_names = [
@@ -54,150 +55,258 @@ def main():
         for name in class_names
     ]
 
-    app.layout = html.Div([
-        html.Div([
-            html.H1("MHC Configuration Visualization Tool"),
-            html.P("By Alex Habegger - GitHub: @ahabegger")
-        ], className="header-card"),
-
-        html.Details([
-            html.Summary("How to Add Snapshots", className="filter-summary"),
+    # --- Page Layouts ---
+    def home_layout():
+        return html.Div([
             html.Div([
-                html.P("Where to add new snapshots:", className="helper-text"),
-                html.P("Place JSON files under this folder (one subfolder per snapshot):"),
-                html.P(["Snapshots folder: ", html.Code(snapshots_abs)]),
-                html.P("After adding a folder, click 'Refresh Snapshot List' to see it in the dropdown."),
-                html.P(["Content folder (CSV exports): ", html.Code(content_abs)])
-            ], className="status-box")
-        ], open=False, className="filter-section"),
+                html.H1("MHC Configuration Visualization Tool"),
+                html.P("By Alex Habegger - GitHub: @ahabegger")
+            ], className="header-card"),
 
-        html.Div([
+            html.Details([
+                html.Summary("How to Add Snapshots", className="filter-summary"),
+                html.Div([
+                    html.P("Where to add new snapshots:", className="helper-text"),
+                    html.P("Place JSON files under this folder (one subfolder per snapshot):"),
+                    html.P(["Snapshots folder: ", html.Code(snapshots_abs)]),
+                    html.P("After adding a folder, click 'Refresh Snapshot List' to see it in the dropdown."),
+                    html.P(["Content folder (CSV exports): ", html.Code(content_abs)])
+                ], className="status-box")
+            ], open=False, className="filter-section"),
+
             html.Div([
-                dcc.Dropdown(
-                    id="snapshot-dropdown",
-                    options=[{"label": s, "value": s} for s in snapshots],
-                    placeholder="Select a snapshot to view",
-                    value=snapshots[0] if snapshots else None,
-                    className="snapshot-dropdown"
-                ),
-                html.Button("Refresh Snapshot List", id="refresh-button", className="btn btn-secondary"),
-                html.Button("Refresh Graph", id="refresh-graph-button", className="btn btn-message")
+                html.Div([
+                    dcc.Dropdown(
+                        id="snapshot-dropdown",
+                        options=[{"label": s, "value": s} for s in snapshots],
+                        placeholder="Select a snapshot to view",
+                        value=snapshots[0] if snapshots else None,
+                        className="snapshot-dropdown"
+                    ),
+                    html.Button("Refresh Snapshot List", id="refresh-button", className="btn btn-secondary"),
+                    html.Button("Refresh Graph", id="refresh-graph-button", className="btn btn-message"),
+                    dcc.Link("Compare Snapshots →", href="/compare", className="btn btn-secondary", id="go-compare-link")
+                ], className="controls-row"),
+
+                # Collapsible filter section - classes
+                html.Details([
+                    html.Summary("Filter By Element", className="filter-summary"),
+                    dcc.Checklist(
+                        id="class-filter",
+                        options=class_options,
+                        value=class_names,
+                        className="checklist"
+                    )
+                ], open=False, className="filter-section"),
+
+                # Collapsible filter section - programs
+                html.Details([
+                    html.Summary("Filter By Program", className="filter-summary"),
+                    dcc.Checklist(
+                        id="program-filter",
+                        options=[],  # populated dynamically based on selected snapshot
+                        value=[],    # default to all programs in snapshot via callback
+                        className="checklist"
+                    )
+                ], open=False, className="filter-section"),
+
+                # Collapsible filter section - search by node name
+                html.Details([
+                    html.Summary("Filter By Search", className="filter-summary"),
+                    html.Div([
+                        html.Span("🔎", className="search-icon"),
+                        dcc.Input(
+                            id="search-filter",
+                            type="text",
+                            placeholder="Type to include nodes whose name contains...",
+                            value="",
+                            debounce=True,
+                            className="search-input"
+                        ),
+                        html.Button("Reset", id="reset-search-button", title="Clear search", className="search-reset-btn")
+                    ], className="search-input-wrapper")
+                ], open=False, className="filter-section"),
+
+                # New: Highlight section - search within raw JSON
+                html.Details([
+                    html.Summary("Highlight By Search In JSON", className="filter-summary"),
+                    html.Div([
+                        html.Span("🧩", className="search-icon"),
+                        dcc.Input(
+                            id="json-highlight",
+                            type="text",
+                            placeholder="Highlight nodes whose raw JSON contains...",
+                            value="",
+                            debounce=True,
+                            className="search-input"
+                        ),
+                        html.Button("Reset", id="reset-json-highlight", title="Clear JSON highlight", className="search-reset-btn")
+                    ], className="search-input-wrapper"),
+                    html.Div([
+                        html.P("Enter a Regular Expression (case-insensitive) to test against each node's raw JSON.", className="helper-text"),
+                        html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.", className="helper-text"),
+                        html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no JSON).", className="helper-note"),
+                        html.P("If both highlight fields are used, a node must match all provided patterns to be green.", className="helper-note"),
+                        html.P(" ", className="helper-note"),  # Extra space
+                        html.P("Outline Legend:", style={'fontWeight': '600', 'marginRight': '8px'}),
+                        html.P([
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #2ecc71', 'marginRight': '6px'}),
+                            html.Span("Match", className="helper-note", style={'marginRight': '12px'}),
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #e74c3c', 'marginRight': '6px'}),
+                            html.Span("No match", className="helper-note", style={'marginRight': '12px'}),
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #000000', 'marginRight': '6px'}),
+                            html.Span("N/A", className="helper-note", style={'marginRight': '12px'}),
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '2px solid #ffffff', 'boxShadow': '0 0 0 1px #ccc inset', 'marginRight': '6px'}),
+                            html.Span("Default", className="helper-note"),
+                        ], className="legend-row", style={'display': 'flex', 'alignItems': 'center', 'gap': '2px', 'margin': '6px 0 10px'})
+                    ])
+                ], open=False, className="filter-section"),
+
+                # New: Highlight section - search within extracted content
+                html.Details([
+                    html.Summary("Highlight By Search in Content", className="filter-summary"),
+                    html.Div([
+                        html.Span("✨", className="search-icon"),
+                        dcc.Input(
+                            id="content-highlight",
+                            type="text",
+                            placeholder="Highlight nodes whose extracted content contains...",
+                            value="",
+                            debounce=True,
+                            className="search-input"
+                        ),
+                        html.Button("Reset", id="reset-content-highlight", title="Clear Content highlight", className="search-reset-btn")
+                    ], className="search-input-wrapper"),
+                    html.Div([
+                        html.P("Enter a Regular Expression (case-insensitive) to test against extracted node content (e.g., message bodies, field defaults, HTML blocks).", className="helper-text"),
+                        html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.", className="helper-text"),
+                        html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no or empty content).", className="helper-note"),
+                        html.P("If both highlight fields are used, a node must match all provided patterns to be green.", className="helper-note"),
+                        html.P(" ", className="helper-note"),  # Extra space
+                        html.P("Outline Legend:", style={'fontWeight': '600', 'marginRight': '8px'}),
+                        html.P([
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #2ecc71', 'marginRight': '6px'}),
+                            html.Span("Match", className="helper-note", style={'marginRight': '12px'}),
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #e74c3c', 'marginRight': '6px'}),
+                            html.Span("No match", className="helper-note", style={'marginRight': '12px'}),
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #000000', 'marginRight': '6px'}),
+                            html.Span("N/A", className="helper-note", style={'marginRight': '12px'}),
+                            html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '2px solid #ffffff', 'boxShadow': '0 0 0 1px #ccc inset', 'marginRight': '6px'}),
+                            html.Span("Default", className="helper-note"),
+                        ], className="legend-row", style={'display': 'flex', 'alignItems': 'center', 'gap': '2px', 'margin': '6px 0 10px'})
+                    ])
+                ], open=False, className="filter-section"),
+
+
+                dcc.Graph(id="network-graph", className="network-graph"),
+                # Add this div to display clicked node information
+                html.Div(id="node-info", className="node-info-box")
+            ], className="panel-box"),
+
+            html.H3("* = Elements could be referrenced by non-uploaded elements or by queries"),
+            html.H3("** = Implied elements created to represent references to non-uploaded elements (missing context)"),
+            html.Div([
+                html.Button("Download Incentive Content", id="download-incentive-button",
+                            title="Export Incentive content to CSV", className="btn btn-incentive"),
+                html.Button("Download Message Content", id="download-message-button",
+                            title="Export Message content to CSV", className="btn btn-message"),
+                html.Button("Download Custom Fields Content", id="download-custom-fields-button",
+                            title="Export Custom Field definitions to CSV", className="btn btn-custom"),
+                html.Button("Download Page Layout Content***", id="download-page-layout-button",
+                            title="Export Page Layout HTML content to CSV", className="btn btn-layout")
+            ], className="buttons-row"),
+
+            # Download status box (below the buttons)
+            dcc.Loading(
+                id="download-loading",
+                type="default",
+                color="#999",
+                children=html.Div(id="download-status", className="status-box")
+            ),
+
+            html.Div("*** = Only downloads HTML Elements from page layouts", className="footnote")
+        ], className="app-container")
+
+    def compare_layout():
+        # Rebuild snapshots list to reflect latest
+        current_snapshots = [d for d in os.listdir("Snapshots") if os.path.isdir(os.path.join("Snapshots", d))]
+        return html.Div([
+            html.Div([
+                html.H1("Compare Snapshots"),
+                html.P("Select two snapshots to compare their configuration graphs side-by-side."),
+                dcc.Link("← Back to Graph", href="/", className="btn btn-secondary")
+            ], className="header-card"),
+
+            # Compare legend
+            html.Div([
+                html.Span("Outline Legend:", style={'fontWeight': '600', 'marginRight': '8px'}),
+                html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #000000', 'marginRight': '6px'}),
+                html.Span("Same", className="helper-note", style={'marginRight': '12px'}),
+                html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #f39c12', 'marginRight': '6px'}),
+                html.Span("Changed", className="helper-note", style={'marginRight': '12px'}),
+                html.Span(" ", style={'display': 'inline-block', 'width': '12px', 'height': '12px', 'borderRadius': '50%', 'backgroundColor': '#ddd', 'border': '3px solid #e74c3c', 'marginRight': '6px'}),
+                html.Span("Distinct", className="helper-note"),
+            ], className="legend-row", style={'display': 'flex', 'alignItems': 'center', 'gap': '2px', 'margin': '0 0 10px'}),
+
+            # Controls row with snapshot selectors
+            html.Div([
+                html.Div([
+                    html.Label("Snapshot A"),
+                    dcc.Dropdown(
+                        id="compare-snapshot-a",
+                        options=[{"label": s, "value": s} for s in current_snapshots],
+                        value=(current_snapshots[0] if current_snapshots else None),
+                        placeholder="Select Snapshot A",
+                        className="snapshot-dropdown"
+                    )
+                ], className="compare-picker"),
+                html.Div([
+                    html.Label("Snapshot B"),
+                    dcc.Dropdown(
+                        id="compare-snapshot-b",
+                        options=[{"label": s, "value": s} for s in current_snapshots],
+                        value=(current_snapshots[1] if current_snapshots and len(current_snapshots) > 1 else (current_snapshots[0] if current_snapshots else None)),
+                        placeholder="Select Snapshot B",
+                        className="snapshot-dropdown"
+                    )
+                ], className="compare-picker"),
+                html.Button("Refresh Snapshot List", id="compare-refresh-button", className="btn btn-secondary"),
+                html.Button("Compare", id="compare-run-button", className="btn btn-message")
             ], className="controls-row"),
 
-            # Collapsible filter section - classes
-            html.Details([
-                html.Summary("Filter By Element", className="filter-summary"),
-                dcc.Checklist(
-                    id="class-filter",
-                    options=class_options,
-                    value=class_names,
-                    className="checklist"
-                )
-            ], open=False, className="filter-section"),
-
-            # Collapsible filter section - programs
-            html.Details([
-                html.Summary("Filter By Program", className="filter-summary"),
-                dcc.Checklist(
-                    id="program-filter",
-                    options=[],  # populated dynamically based on selected snapshot
-                    value=[],    # default to all programs in snapshot via callback
-                    className="checklist"
-                )
-            ], open=False, className="filter-section"),
-
-            # Collapsible filter section - search by node name
-            html.Details([
-                html.Summary("Filter By Search", className="filter-summary"),
+            html.Div([
                 html.Div([
-                    html.Span("🔎", className="search-icon"),
-                    dcc.Input(
-                        id="search-filter",
-                        type="text",
-                        placeholder="Type to include nodes whose name contains...",
-                        value="",
-                        debounce=True,
-                        className="search-input"
-                    ),
-                    html.Button("Reset", id="reset-search-button", title="Clear search", className="search-reset-btn")
-                ], className="search-input-wrapper")
-            ], open=False, className="filter-section"),
-
-            # New: Highlight section - search within raw JSON
-            html.Details([
-                html.Summary("Highlight By Search In JSON", className="filter-summary"),
+                    html.H2("Snapshot A"),
+                    dcc.Graph(id="compare-graph-a", className="network-graph")
+                ], className="panel-box"),
                 html.Div([
-                    html.Span("🧩", className="search-icon"),
-                    dcc.Input(
-                        id="json-highlight",
-                        type="text",
-                        placeholder="Highlight nodes whose raw JSON contains...",
-                        value="",
-                        debounce=True,
-                        className="search-input"
-                    ),
-                    html.Button("Reset", id="reset-json-highlight", title="Clear JSON highlight", className="search-reset-btn")
-                ], className="search-input-wrapper"),
-                html.Div([
-                    html.P("Enter a Regular Expression (case-insensitive) to test against each node's raw JSON.", className="helper-text"),
-                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.", className="helper-text"),
-                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no JSON).", className="helper-note"),
-                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", className="helper-note")
-                ])
-            ], open=False, className="filter-section"),
+                    html.H2("Snapshot B"),
+                    dcc.Graph(id="compare-graph-b", className="network-graph")
+                ], className="panel-box")
+            ], className="two-col"),
 
-            # New: Highlight section - search within extracted content
-            html.Details([
-                html.Summary("Highlight By Search in Content", className="filter-summary"),
-                html.Div([
-                    html.Span("✨", className="search-icon"),
-                    dcc.Input(
-                        id="content-highlight",
-                        type="text",
-                        placeholder="Highlight nodes whose extracted content contains...",
-                        value="",
-                        debounce=True,
-                        className="search-input"
-                    ),
-                    html.Button("Reset", id="reset-content-highlight", title="Clear Content highlight", className="search-reset-btn")
-                ], className="search-input-wrapper"),
-                html.Div([
-                    html.P("Enter a Regular Expression (case-insensitive) to test against extracted node content (e.g., message bodies, field defaults, HTML blocks).", className="helper-text"),
-                    html.P("For help with Regular Expressions, see https://regex101.com/ or https://regexr.com/ of use ChatGPT to generate patterns.", className="helper-text"),
-                    html.P("Border colors: Green = matches, Red = does not match, Black = not applicable (no or empty content).", className="helper-note"),
-                    html.P("If both highlight fields are used, a node must match all provided patterns to be green.", className="helper-note")
-                ])
-            ], open=False, className="filter-section"),
+            html.H1("Differences"),
+            html.Div(id="compare-diff")
+        ], className="app-container")
 
-            dcc.Graph(id="network-graph", className="network-graph"),
-            # Add this div to display clicked node information
-            html.Div(id="node-info", className="node-info-box")
-        ], className="panel-box"),
+    # Provide a validation layout that includes all components from all pages
+    app.validation_layout = html.Div([
+        dcc.Location(id='url'),
+        home_layout(),
+        compare_layout()
+    ])
 
-        html.H3("* = Elements could be referrenced by non-uploaded elements or by queries"),
-        html.H3("** = Implied elements created to represent references to non-uploaded elements (missing context)"),
-        html.Div([
-            html.Button("Download Incentive Content", id="download-incentive-button",
-                        title="Export Incentive content to CSV", className="btn btn-incentive"),
-            html.Button("Download Message Content", id="download-message-button",
-                        title="Export Message content to CSV", className="btn btn-message"),
-            html.Button("Download Custom Fields Content", id="download-custom-fields-button",
-                        title="Export Custom Field definitions to CSV", className="btn btn-custom"),
-            html.Button("Download Page Layout Content***", id="download-page-layout-button",
-                        title="Export Page Layout HTML content to CSV", className="btn btn-layout")
-        ], className="buttons-row"),
+    # Router
+    app.layout = html.Div([
+        dcc.Location(id='url'),
+        html.Div(id='page-content')
+    ])
 
-        # Download status box (below the buttons)
-        dcc.Loading(
-            id="download-loading",
-            type="default",
-            color="#999",
-            children=html.Div(id="download-status", className="status-box")
-        ),
-
-        html.Div("*** = Only downloads HTML Elements from page layouts", className="footnote")
-    ], className="app-container")
-
+    @app.callback(Output('page-content', 'children'), Input('url', 'pathname'))
+    def display_page(pathname):
+        if pathname == '/compare':
+            return compare_layout()
+        return home_layout()
 
     # Populate program filter options and defaults when snapshot changes
     @app.callback(
@@ -376,6 +485,29 @@ def main():
         except Exception as e:
             return html.Div(f"Error loading node details: {str(e)}")
 
+    # --- Compare page callbacks ---
+    from Compare import build_compare
+
+    @app.callback(
+        [Output("compare-graph-a", "figure"), Output("compare-graph-b", "figure"), Output("compare-diff", "children"), Output("compare-snapshot-a", "options"), Output("compare-snapshot-b", "options")],
+        [Input("compare-snapshot-a", "value"), Input("compare-snapshot-b", "value"), Input("compare-refresh-button", "n_clicks"), Input("compare-run-button", "n_clicks")]
+    )
+    def update_compare(a, b, _refresh_clicks, _run_clicks):
+        # keep snapshot options fresh
+        snaps = [d for d in os.listdir("Snapshots") if os.path.isdir(os.path.join("Snapshots", d))]
+        options = [{"label": s, "value": s} for s in snaps]
+        if not a or not b or a == b:
+            # Empty figures and guidance when invalid selection
+            msg = "Select two different snapshots to compare."
+            empty = {"data": [], "layout": {"title": msg}}
+            return empty, empty, html.Div(msg, className="muted-text"), options, options
+        try:
+            fig_a, fig_b, diff_children = build_compare(a, b)
+            return fig_a, fig_b, diff_children, options, options
+        except Exception as e:
+            err = html.Div(f"Error comparing snapshots: {e}")
+            empty = {"data": [], "layout": {"title": "Error"}}
+            return empty, empty, err, options, options
 
     return app
 
@@ -383,4 +515,3 @@ def main():
 if __name__ == "__main__":
     app = main()
     app.run(debug=True)
-

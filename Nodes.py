@@ -38,12 +38,18 @@ def find_nodes(files, folder):
                 node['connections'] = [r for r in refs if r != node_name]
                 node['order'] = "primary"
                 node['query'] = "False"
-                node['json'] = item_string
+
+                # Store raw and prettified JSON for consistent display/search
+                node['raw'] = item
+                try:
+                    node_pretty = json.dumps(item, indent=2, sort_keys=True, default=str)
+                except Exception:
+                    node_pretty = item_string
+                node['json_pretty'] = node_pretty
+                node['json'] = node_pretty  # use prettified JSON as the stored JSON string
+
                 if "qry" in item_string:
                     node['query'] = "True"
-
-                # Attach the raw JSON for collapsible Raw JSON view
-                node['raw'] = item
 
                 my_array = []
 
