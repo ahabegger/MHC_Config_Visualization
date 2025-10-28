@@ -5,4 +5,5 @@ flask
 # Graphing and layouts
 plotly
 networkx
+numpy
 

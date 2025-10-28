@@ -3,3 +3,4 @@ Snapshots
 .venv
 .idea
 __pycache__
+/Crawler/
